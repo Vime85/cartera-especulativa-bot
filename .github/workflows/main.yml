@@ -1,29 +1,63 @@
 name: Bot cartera especulativa
 
 on:
+
+  # Permite ejecutarlo manualmente desde GitHub
   workflow_dispatch:
+
+  # Ejecutarlo cada hora, de lunes a viernes
   schedule:
-    - cron: "0 9 * * 1-5"
+    - cron: "0 * * * 1-5"
+
 
 jobs:
+
   ejecutar-bot:
+
     runs-on: ubuntu-latest
 
     steps:
+
+      # ----------------------------------------------------
+      # Descargar código
+      # ----------------------------------------------------
+
       - name: Descargar código
         uses: actions/checkout@v4
+
+
+      # ----------------------------------------------------
+      # Configurar Python
+      # ----------------------------------------------------
 
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+
+      # ----------------------------------------------------
+      # Instalar dependencias
+      # ----------------------------------------------------
+
       - name: Instalar dependencias
         run: |
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          pip install yfinance requests
+
+
+      # ----------------------------------------------------
+      # Ejecutar bot
+      # ----------------------------------------------------
 
       - name: Ejecutar bot
+
         env:
+
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python bot_cartera_telegram.py
+
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+
+        run: |
+
+          python bot_cartera_telegram.py
