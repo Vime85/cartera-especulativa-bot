@@ -1,2 +1,2 @@
 yfinance
-python-telegram-bot[job-queue]
+requests
