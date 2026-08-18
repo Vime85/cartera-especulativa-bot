@@ -7,143 +7,153 @@ import yfinance as yf
 
 
 # ============================================================
-# BOT DE SEGUIMIENTO DE CARTERA
-# ============================================================
-#
-# Cartera mensual:
-#
-#   80 €  VWCE      - Vanguard FTSE All-World
-#   20 €  IWMO.MI   - iShares Edge MSCI World Momentum
-#   10 €  RKLB      - Rocket Lab
-#    8 €  ASTS      - AST SpaceMobile
-#    7 €  TEM       - Tempus AI
-#    5 €  IONQ      - IonQ
-#
-# Total: 130 €/mes
-#
-# El bot NO ejecuta compras ni ventas.
-# Solo analiza y envía un informe a Telegram.
-#
-# Recomendación:
-#   🟢 MANTENER
-#   🟡 VIGILAR
-#   🔴 REVISAR
-#
-# Para las posiciones especulativas se evita recomendar
-# vender simplemente por una caída de precio.
-# ============================================================
-
-
-# ============================================================
-# CONFIGURACIÓN TELEGRAM
+# CONFIGURACIÓN
 # ============================================================
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("CHAT_ID", "").strip()
 
+TOTAL_MONTHLY = 130.0
 
 # ============================================================
-# CARTERA
+# CARTERA MENSUAL
 # ============================================================
+#
+# 100 € ETFs
+#  30 € especulativa
+#
+# TOTAL = 130 €
+#
 
 PORTFOLIO = [
+
+    # --------------------------------------------------------
+    # ETF PRINCIPAL
+    # --------------------------------------------------------
+
     {
-        "ticker": "VWCE.AS",
-        "name": "Vanguard FTSE All-World",
-        "short": "VWCE",
-        "monthly": 80,
+        "name": "Vanguard FTSE All-World UCITS ETF",
+        "ticker": "VWCE.DE",
+        "display_ticker": "VWCE",
+        "monthly": 80.0,
         "type": "ETF",
-        "speculative": False,
+        "role": "Núcleo global",
     },
+
+    # --------------------------------------------------------
+    # ETF MOMENTUM
+    # --------------------------------------------------------
+
     {
-        "ticker": "IWMO.MI",
-        "name": "iShares Edge MSCI World Momentum",
-        "short": "IWMO",
-        "monthly": 20,
+        "name": "iShares Edge MSCI World Momentum Factor UCITS ETF",
+        "ticker": "IS3R.DE",
+        "display_ticker": "IS3R",
+        "monthly": 20.0,
         "type": "ETF",
-        "speculative": False,
+        "role": "Factor momentum",
     },
+
+    # --------------------------------------------------------
+    # CARTERA ESPECULATIVA
+    # --------------------------------------------------------
+
     {
-        "ticker": "RKLB",
         "name": "Rocket Lab",
-        "short": "RKLB",
-        "monthly": 10,
-        "type": "Acción",
-        "speculative": True,
+        "ticker": "RKLB",
+        "display_ticker": "RKLB",
+        "monthly": 10.0,
+        "type": "ESPECULATIVA",
+        "role": "Espacial",
     },
+
     {
-        "ticker": "ASTS",
         "name": "AST SpaceMobile",
-        "short": "ASTS",
-        "monthly": 8,
-        "type": "Acción",
-        "speculative": True,
+        "ticker": "ASTS",
+        "display_ticker": "ASTS",
+        "monthly": 8.0,
+        "type": "ESPECULATIVA",
+        "role": "Satélites / conectividad",
     },
+
     {
-        "ticker": "TEM",
         "name": "Tempus AI",
-        "short": "TEM",
-        "monthly": 7,
-        "type": "Acción",
-        "speculative": True,
+        "ticker": "TEM",
+        "display_ticker": "TEM",
+        "monthly": 7.0,
+        "type": "ESPECULATIVA",
+        "role": "IA / salud",
     },
+
     {
-        "ticker": "IONQ",
         "name": "IonQ",
-        "short": "IONQ",
-        "monthly": 5,
-        "type": "Acción",
-        "speculative": True,
+        "ticker": "IONQ",
+        "display_ticker": "IONQ",
+        "monthly": 5.0,
+        "type": "ESPECULATIVA",
+        "role": "Computación cuántica",
     },
 ]
 
 
-TOTAL_MONTHLY = sum(x["monthly"] for x in PORTFOLIO)
+# ============================================================
+# AJUSTES
+# ============================================================
+
+WEEKLY_ALERT = 8.0
+STRONG_WEEKLY_ALERT = 15.0
+
+TELEGRAM_TIMEOUT = 30
 
 
 # ============================================================
-# FUNCIONES GENERALES
+# VALIDACIÓN DE CONFIGURACIÓN
 # ============================================================
 
-def safe_float(value):
-    """Convierte un valor a float sin romper el programa."""
-    try:
-        if value is None:
-            return None
+def validate_config():
 
-        value = float(value)
+    total = sum(
+        item["monthly"]
+        for item in PORTFOLIO
+    )
 
-        if value != value:
-            return None
+    if round(total, 2) != round(TOTAL_MONTHLY, 2):
 
-        return value
+        raise RuntimeError(
+            f"La cartera suma {total:.2f} €, "
+            f"pero debería sumar {TOTAL_MONTHLY:.2f} €."
+        )
 
-    except Exception:
-        return None
+    if not TELEGRAM_BOT_TOKEN:
+
+        raise RuntimeError(
+            "No existe TELEGRAM_BOT_TOKEN."
+        )
+
+    if not CHAT_ID:
+
+        raise RuntimeError(
+            "No existe CHAT_ID."
+        )
 
 
-def format_price(value):
-    """Formatea un precio."""
-    value = safe_float(value)
+# ============================================================
+# FORMATO
+# ============================================================
+
+def money(value):
 
     if value is None:
         return "N/D"
 
-    if value >= 1000:
-        return f"{value:,.0f}"
-
-    if value >= 100:
-        return f"{value:,.2f}"
-
-    if value >= 1:
-        return f"{value:,.2f}"
-
-    return f"{value:.4f}"
+    return (
+        f"{value:,.2f} €"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
 
 
-def format_percent(value):
-    """Formatea un porcentaje."""
-    value = safe_float(value)
+def pct(value):
 
     if value is None:
         return "N/D"
@@ -153,9 +163,650 @@ def format_percent(value):
     return f"{sign}{value:.2f}%"
 
 
-def escape(text):
-    """Escapa texto para Telegram HTML."""
-    return html.escape(str(text))
+def safe_float(value):
+
+    try:
+
+        if value is None:
+            return None
+
+        return float(value)
+
+    except (TypeError, ValueError):
+
+        return None
+
+
+def fmt_date(value):
+
+    if value is None:
+        return "N/D"
+
+    try:
+
+        if hasattr(value, "to_pydatetime"):
+            value = value.to_pydatetime()
+
+        if value.tzinfo is None:
+            value = value.replace(
+                tzinfo=timezone.utc
+            )
+
+        return value.astimezone(
+            timezone.utc
+        ).strftime("%d/%m/%Y")
+
+    except Exception:
+
+        return "N/D"
+
+
+# ============================================================
+# DATOS DE MERCADO
+# ============================================================
+
+def get_market_data(ticker_symbol):
+
+    ticker = yf.Ticker(
+        ticker_symbol
+    )
+
+    history = ticker.history(
+        period="3mo",
+        interval="1d",
+        auto_adjust=True,
+    )
+
+    if history is None or history.empty:
+
+        raise RuntimeError(
+            "No se han recibido datos de mercado."
+        )
+
+    closes = history[
+        "Close"
+    ].dropna()
+
+    if closes.empty:
+
+        raise RuntimeError(
+            "No hay precios de cierre disponibles."
+        )
+
+    current = safe_float(
+        closes.iloc[-1]
+    )
+
+    previous = None
+    week_ago = None
+    month_ago = None
+
+    if len(closes) >= 2:
+        previous = safe_float(
+            closes.iloc[-2]
+        )
+
+    if len(closes) >= 6:
+        week_ago = safe_float(
+            closes.iloc[-6]
+        )
+
+    if len(closes) >= 22:
+        month_ago = safe_float(
+            closes.iloc[-22]
+        )
+
+    day_change = None
+    week_change = None
+    month_change = None
+
+    if current is not None and previous:
+        day_change = (
+            current / previous - 1
+        ) * 100
+
+    if current is not None and week_ago:
+        week_change = (
+            current / week_ago - 1
+        ) * 100
+
+    if current is not None and month_ago:
+        month_change = (
+            current / month_ago - 1
+        ) * 100
+
+    high_3m = safe_float(
+        closes.max()
+    )
+
+    low_3m = safe_float(
+        closes.min()
+    )
+
+    distance_high = None
+    distance_low = None
+
+    if current and high_3m:
+
+        distance_high = (
+            current / high_3m - 1
+        ) * 100
+
+    if current and low_3m:
+
+        distance_low = (
+            current / low_3m - 1
+        ) * 100
+
+    return {
+
+        "current": current,
+
+        "day_change": day_change,
+
+        "week_change": week_change,
+
+        "month_change": month_change,
+
+        "high_3m": high_3m,
+
+        "low_3m": low_3m,
+
+        "distance_high": distance_high,
+
+        "distance_low": distance_low,
+
+        "last_date": fmt_date(
+            history.index[-1]
+        ),
+    }
+
+
+# ============================================================
+# NOTICIAS
+# ============================================================
+
+def get_news(
+    ticker_symbol,
+    limit=3
+):
+
+    try:
+
+        ticker = yf.Ticker(
+            ticker_symbol
+        )
+
+        raw_news = ticker.news or []
+
+    except Exception:
+
+        return []
+
+    news = []
+
+    for item in raw_news[:limit]:
+
+        try:
+
+            content = item.get(
+                "content",
+                item
+            )
+
+            title = (
+                content.get("title")
+                or item.get("title")
+                or "Noticia sin título"
+            )
+
+            publisher = None
+
+            provider = content.get(
+                "provider"
+            )
+
+            if isinstance(
+                provider,
+                dict
+            ):
+
+                publisher = provider.get(
+                    "displayName"
+                )
+
+            if not publisher:
+
+                publisher = item.get(
+                    "publisher",
+                    "Fuente desconocida"
+                )
+
+            link = None
+
+            canonical = content.get(
+                "canonicalUrl"
+            )
+
+            if isinstance(
+                canonical,
+                dict
+            ):
+
+                link = canonical.get(
+                    "url"
+                )
+
+            if not link:
+
+                click = content.get(
+                    "clickThroughUrl"
+                )
+
+                if isinstance(
+                    click,
+                    dict
+                ):
+
+                    link = click.get(
+                        "url"
+                    )
+
+            if not link:
+
+                link = item.get(
+                    "link"
+                )
+
+            pub_date = content.get(
+                "pubDate"
+            )
+
+            news.append(
+                {
+                    "title": str(title),
+                    "publisher": str(
+                        publisher
+                    ),
+                    "link": link,
+                    "date": pub_date,
+                }
+            )
+
+        except Exception:
+
+            continue
+
+    return news
+
+
+# ============================================================
+# SEÑAL Y ACCIÓN
+# ============================================================
+
+def get_action(
+    asset,
+    data,
+    news
+):
+
+    week = data.get(
+        "week_change"
+    )
+
+    if week is None:
+
+        return (
+            "⚪ SIN DATOS",
+            "No hay suficientes datos "
+            "para valorar esta semana."
+        )
+
+    # --------------------------------------------------------
+    # ETFs
+    # --------------------------------------------------------
+
+    if asset["type"] == "ETF":
+
+        if abs(week) >= STRONG_WEEKLY_ALERT:
+
+            return (
+                "🟡 VIGILAR",
+                "Movimiento semanal excepcional. "
+                "No cambiar la aportación solo por "
+                "el movimiento del precio."
+            )
+
+        return (
+            "🟢 MANTENER",
+            f"Seguir con la aportación prevista "
+            f"de {money(asset['monthly'])}/mes."
+        )
+
+    # --------------------------------------------------------
+    # ESPECULATIVAS
+    # --------------------------------------------------------
+
+    if abs(week) >= STRONG_WEEKLY_ALERT:
+
+        return (
+            "🟠 REVISAR",
+            "Movimiento muy fuerte. Revisar "
+            "noticias y tesis antes de aumentar "
+            "o reducir la posición."
+        )
+
+    if abs(week) >= WEEKLY_ALERT:
+
+        return (
+            "🟡 VIGILAR",
+            "Volatilidad elevada. No tomar "
+            "decisiones solo por el precio."
+        )
+
+    if news:
+
+        return (
+            "🟢 MANTENER / VIGILAR",
+            "No hay una acción automática por "
+            "precio. Revisar las noticias."
+        )
+
+    return (
+        "🟢 MANTENER",
+        f"Continuar con la aportación prevista "
+        f"de {money(asset['monthly'])}/mes."
+    )
+
+
+# ============================================================
+# ANALIZAR ACTIVO
+# ============================================================
+
+def analyze_asset(asset):
+
+    data = get_market_data(
+        asset["ticker"]
+    )
+
+    news = get_news(
+        asset["ticker"],
+        limit=3
+    )
+
+    action, explanation = get_action(
+        asset,
+        data,
+        news
+    )
+
+    return {
+
+        "asset": asset,
+
+        "data": data,
+
+        "news": news,
+
+        "action": action,
+
+        "explanation": explanation,
+    }
+
+
+# ============================================================
+# CONSTRUIR INFORME
+# ============================================================
+
+def build_report(results):
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    lines = []
+
+    lines.append(
+        "📊 <b>INFORME SEMANAL — CARTERA 130 €</b>"
+    )
+
+    lines.append(
+        f"<i>{now.strftime('%d/%m/%Y %H:%M')} UTC</i>"
+    )
+
+    lines.append("")
+
+    lines.append(
+        "Plan mensual: "
+        "<b>130 €</b> — "
+        "100 € ETFs + "
+        "30 € especulativo."
+    )
+
+    lines.append("")
+
+    # --------------------------------------------------------
+    # APORTACIONES
+    # --------------------------------------------------------
+
+    lines.append(
+        "🏦 <b>APORTACIONES MENSUALES</b>"
+    )
+
+    lines.append("")
+
+    for asset in PORTFOLIO:
+
+        lines.append(
+            f"• <b>{html.escape(asset['display_ticker'])}</b> "
+            f"— {money(asset['monthly'])}/mes"
+        )
+
+    lines.append("")
+
+    lines.append(
+        "━━━━━━━━━━━━━━━━━━━━"
+    )
+
+    lines.append("")
+
+    # --------------------------------------------------------
+    # ESTADO
+    # --------------------------------------------------------
+
+    lines.append(
+        "📈 <b>ESTADO DE LA CARTERA</b>"
+    )
+
+    lines.append("")
+
+    for result in results:
+
+        asset = result["asset"]
+
+        data = result["data"]
+
+        lines.append(
+            f"<b>{html.escape(asset['display_ticker'])}</b> "
+            f"— {html.escape(asset['name'])}"
+        )
+
+        if data["current"] is not None:
+
+            lines.append(
+                f"💶 Precio: "
+                f"<b>{data['current']:.2f}</b>"
+            )
+
+        else:
+
+            lines.append(
+                "💶 Precio: N/D"
+            )
+
+        lines.append(
+            f"📅 Semana: "
+            f"<b>{pct(data['week_change'])}</b> "
+            f"| Mes: "
+            f"<b>{pct(data['month_change'])}</b>"
+        )
+
+        if (
+            data["low_3m"] is not None
+            and data["high_3m"] is not None
+        ):
+
+            lines.append(
+                f"📉 3 meses: "
+                f"{data['low_3m']:.2f} — "
+                f"{data['high_3m']:.2f}"
+            )
+
+        else:
+
+            lines.append(
+                "📉 3 meses: N/D"
+            )
+
+        lines.append(
+            f"➡️ <b>{result['action']}</b>"
+        )
+
+        lines.append(
+            f"   "
+            f"{html.escape(result['explanation'])}"
+        )
+
+        lines.append("")
+
+    lines.append(
+        "━━━━━━━━━━━━━━━━━━━━"
+    )
+
+    lines.append("")
+
+    # --------------------------------------------------------
+    # NOTICIAS
+    # --------------------------------------------------------
+
+    lines.append(
+        "📰 <b>NOTICIAS DESTACADAS</b>"
+    )
+
+    lines.append("")
+
+    news_count = 0
+
+    for result in results:
+
+        asset = result["asset"]
+
+        news = result["news"]
+
+        if not news:
+            continue
+
+        for item in news[:2]:
+
+            title = html.escape(
+                item["title"]
+            )
+
+            publisher = html.escape(
+                item["publisher"]
+            )
+
+            if item["link"]:
+
+                safe_link = html.escape(
+                    item["link"],
+                    quote=True
+                )
+
+                lines.append(
+                    f"• <a href=\"{safe_link}\">"
+                    f"{title}"
+                    f"</a> "
+                    f"({publisher}) "
+                    f"— {asset['display_ticker']}"
+                )
+
+            else:
+
+                lines.append(
+                    f"• {title} "
+                    f"({publisher}) "
+                    f"— {asset['display_ticker']}"
+                )
+
+            news_count += 1
+
+    if news_count == 0:
+
+        lines.append(
+            "No se han podido obtener "
+            "noticias esta semana."
+        )
+
+    lines.append("")
+
+    lines.append(
+        "━━━━━━━━━━━━━━━━━━━━"
+    )
+
+    lines.append("")
+
+    # --------------------------------------------------------
+    # QUÉ HACER
+    # --------------------------------------------------------
+
+    lines.append(
+        "🎯 <b>QUÉ HACER ESTA SEMANA</b>"
+    )
+
+    lines.append("")
+
+    lines.append(
+        "1. <b>VWCE:</b> mantener "
+        "80 €/mes."
+    )
+
+    lines.append(
+        "2. <b>IS3R:</b> mantener "
+        "20 €/mes."
+    )
+
+    lines.append(
+        "3. <b>RKLB:</b> mantener "
+        "10 €/mes salvo cambio de tesis."
+    )
+
+    lines.append(
+        "4. <b>ASTS:</b> mantener "
+        "8 €/mes salvo cambio de tesis."
+    )
+
+    lines.append(
+        "5. <b>TEM:</b> mantener "
+        "7 €/mes salvo cambio de tesis."
+    )
+
+    lines.append(
+        "6. <b>IONQ:</b> mantener "
+        "5 €/mes salvo cambio de tesis."
+    )
+
+    lines.append("")
+
+    lines.append(
+        "⚠️ <i>Una subida o caída semanal "
+        "por sí sola no es motivo para cambiar "
+        "la estrategia. En las especulativas, "
+        "hay que valorar también resultados, "
+        "noticias y evolución de la tesis.</i>"
+    )
+
+    return "\n".join(lines)
 
 
 # ============================================================
@@ -163,739 +814,112 @@ def escape(text):
 # ============================================================
 
 def send_telegram(message):
-    """Envía un mensaje a Telegram."""
-
-    if not TELEGRAM_BOT_TOKEN:
-        raise RuntimeError(
-            "Falta la variable TELEGRAM_BOT_TOKEN."
-        )
-
-    if not CHAT_ID:
-        raise RuntimeError(
-            "Falta la variable CHAT_ID."
-        )
 
     url = (
         f"https://api.telegram.org/bot"
         f"{TELEGRAM_BOT_TOKEN}/sendMessage"
     )
 
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True,
-    }
-
     response = requests.post(
+
         url,
-        json=payload,
-        timeout=30,
+
+        data={
+
+            "chat_id": CHAT_ID,
+
+            "text": message,
+
+            "parse_mode": "HTML",
+
+            "disable_web_page_preview": True,
+        },
+
+        timeout=TELEGRAM_TIMEOUT,
     )
 
-    response.raise_for_status()
+    if not response.ok:
 
-    data = response.json()
-
-    if not data.get("ok"):
         raise RuntimeError(
-            f"Telegram respondió con error: {data}"
+            f"Telegram devolvió "
+            f"HTTP {response.status_code}: "
+            f"{response.text[:500]}"
         )
-
-
-# ============================================================
-# DATOS DE MERCADO
-# ============================================================
-
-def download_history(ticker):
-    """
-    Descarga aproximadamente un año de datos diarios.
-    """
-
-    try:
-        data = yf.download(
-            ticker,
-            period="1y",
-            interval="1d",
-            auto_adjust=True,
-            progress=False,
-            threads=False,
-        )
-
-        if data is None or data.empty:
-            return None
-
-        # Algunas versiones de yfinance devuelven columnas
-        # MultiIndex. Las simplificamos.
-        if hasattr(data.columns, "nlevels"):
-            if data.columns.nlevels > 1:
-                try:
-                    data.columns = data.columns.get_level_values(0)
-                except Exception:
-                    pass
-
-        if "Close" not in data.columns:
-            return None
-
-        data = data.dropna(subset=["Close"])
-
-        if data.empty:
-            return None
-
-        return data
-
-    except Exception as e:
-        print(f"Error descargando {ticker}: {e}")
-        return None
-
-
-def calculate_metrics(data):
-    """
-    Calcula métricas básicas de tendencia.
-    """
-
-    if data is None or data.empty:
-        return None
-
-    close = data["Close"]
-
-    try:
-        current = safe_float(close.iloc[-1])
-
-        if current is None:
-            return None
-
-        # Últimos días disponibles
-        one_week = safe_float(close.iloc[-6]) if len(close) >= 6 else None
-        one_month = safe_float(close.iloc[-22]) if len(close) >= 22 else None
-        three_months = (
-            safe_float(close.iloc[-66])
-            if len(close) >= 66
-            else None
-        )
-
-        year_ago = (
-            safe_float(close.iloc[0])
-            if len(close) >= 2
-            else None
-        )
-
-        high_52 = safe_float(close.max())
-        low_52 = safe_float(close.min())
-
-        def variation(old):
-            if old is None or old == 0:
-                return None
-
-            return ((current / old) - 1) * 100
-
-        week_change = variation(one_week)
-        month_change = variation(one_month)
-        three_month_change = variation(three_months)
-        year_change = variation(year_ago)
-
-        distance_high = None
-
-        if high_52 and high_52 != 0:
-            distance_high = ((current / high_52) - 1) * 100
-
-        # Medias móviles
-        ma20 = None
-        ma50 = None
-        ma200 = None
-
-        if len(close) >= 20:
-            ma20 = safe_float(close.tail(20).mean())
-
-        if len(close) >= 50:
-            ma50 = safe_float(close.tail(50).mean())
-
-        if len(close) >= 200:
-            ma200 = safe_float(close.tail(200).mean())
-
-        return {
-            "current": current,
-            "week": week_change,
-            "month": month_change,
-            "three_months": three_month_change,
-            "year": year_change,
-            "high_52": high_52,
-            "low_52": low_52,
-            "distance_high": distance_high,
-            "ma20": ma20,
-            "ma50": ma50,
-            "ma200": ma200,
-        }
-
-    except Exception as e:
-        print(f"Error calculando métricas: {e}")
-        return None
-
-
-# ============================================================
-# NOTICIAS
-# ============================================================
-
-def get_news(ticker):
-    """
-    Obtiene las noticias disponibles desde yfinance.
-
-    No utiliza ninguna API de pago.
-    """
-
-    try:
-        stock = yf.Ticker(ticker)
-
-        news = stock.news
-
-        if not news:
-            return []
-
-        results = []
-
-        for item in news[:5]:
-
-            try:
-                content = item.get("content", item)
-
-                title = (
-                    content.get("title")
-                    or item.get("title")
-                    or ""
-                )
-
-                publisher = (
-                    content.get("provider", {}).get("displayName")
-                    if isinstance(
-                        content.get("provider"),
-                        dict
-                    )
-                    else ""
-                )
-
-                if not publisher:
-                    publisher = (
-                        item.get("publisher")
-                        or ""
-                    )
-
-                if title:
-                    results.append(
-                        {
-                            "title": str(title),
-                            "publisher": str(publisher),
-                        }
-                    )
-
-            except Exception:
-                continue
-
-        return results
-
-    except Exception as e:
-        print(f"Error obteniendo noticias de {ticker}: {e}")
-        return []
-
-
-# ============================================================
-# ANÁLISIS
-# ============================================================
-
-def get_signal(metrics, speculative):
-    """
-    Genera una señal sencilla.
-
-    Importante:
-    No es una recomendación financiera profesional.
-
-    Para especulativas:
-      - Se da más peso a la tendencia.
-      - Una caída fuerte no genera automáticamente VENDER.
-    """
-
-    if not metrics:
-        return (
-            "⚪ SIN DATOS",
-            "No hay suficientes datos para analizarla."
-        )
-
-    score = 0
-
-    week = metrics["week"] or 0
-    month = metrics["month"] or 0
-    three_months = metrics["three_months"] or 0
-    year = metrics["year"] or 0
-
-    current = metrics["current"]
-    ma20 = metrics["ma20"]
-    ma50 = metrics["ma50"]
-    ma200 = metrics["ma200"]
-
-    # --------------------------------------------------------
-    # Tendencia de corto plazo
-    # --------------------------------------------------------
-
-    if week > 3:
-        score += 1
-    elif week < -7:
-        score -= 1
-
-    # --------------------------------------------------------
-    # Tendencia mensual
-    # --------------------------------------------------------
-
-    if month > 5:
-        score += 1
-    elif month < -10:
-        score -= 1
-
-    # --------------------------------------------------------
-    # Tendencia trimestral
-    # --------------------------------------------------------
-
-    if three_months > 8:
-        score += 1
-    elif three_months < -15:
-        score -= 1
-
-    # --------------------------------------------------------
-    # Tendencia anual
-    # --------------------------------------------------------
-
-    if year > 10:
-        score += 1
-    elif year < -20:
-        score -= 1
-
-    # --------------------------------------------------------
-    # Medias móviles
-    # --------------------------------------------------------
-
-    if current is not None and ma50 is not None:
-        if current > ma50:
-            score += 1
-        else:
-            score -= 1
-
-    if current is not None and ma200 is not None:
-        if current > ma200:
-            score += 1
-        else:
-            score -= 1
-
-    # --------------------------------------------------------
-    # Posiciones especulativas
-    # --------------------------------------------------------
-
-    if speculative:
-
-        # No se dispara "vender" solo por caída.
-        if score >= 3:
-            return (
-                "🟢 MANTENER / ACUMULAR",
-                "La tendencia reciente es favorable."
-            )
-
-        if score <= -4:
-            return (
-                "🟡 VIGILAR TESIS",
-                "La evolución es débil. No implica vender automáticamente; "
-                "conviene revisar noticias, resultados y la tesis."
-            )
-
-        return (
-            "🟡 MANTENER / VIGILAR",
-            "Hay señales mixtas. Mantener mientras la tesis siga intacta."
-        )
-
-    # --------------------------------------------------------
-    # ETFs
-    # --------------------------------------------------------
-
-    if score >= 3:
-        return (
-            "🟢 MANTENER",
-            "La tendencia general es favorable."
-        )
-
-    if score <= -4:
-        return (
-            "🟡 VIGILAR",
-            "La tendencia se ha debilitado. Revisar, pero evitar "
-            "decisiones impulsivas por una sola semana."
-        )
-
-    return (
-        "🟢 MANTENER",
-        "No aparece un cambio suficiente para modificar la estrategia."
-    )
-
-
-# ============================================================
-# RESUMEN DE UN ACTIVO
-# ============================================================
-
-def analyze_asset(asset):
-    ticker = asset["ticker"]
-
-    print(f"Analizando {ticker}...")
-
-    data = download_history(ticker)
-
-    metrics = calculate_metrics(data)
-
-    news = get_news(ticker)
-
-    signal, explanation = get_signal(
-        metrics,
-        asset["speculative"],
-    )
-
-    return {
-        "asset": asset,
-        "metrics": metrics,
-        "news": news,
-        "signal": signal,
-        "explanation": explanation,
-    }
-
-
-# ============================================================
-# GENERAR INFORME
-# ============================================================
-
-def build_report(results):
-    now = datetime.now(timezone.utc)
-
-    date_text = now.strftime("%d/%m/%Y")
-
-    lines = []
-
-    lines.append(
-        "<b>📊 INFORME SEMANAL DE TU CARTERA</b>"
-    )
-
-    lines.append(
-        f"📅 {date_text}"
-    )
-
-    lines.append("")
-
-    lines.append(
-        f"<b>💶 Aportación mensual: {TOTAL_MONTHLY} €</b>"
-    )
-
-    lines.append(
-        "Objetivo: crecimiento a largo plazo + "
-        "pequeña parte especulativa."
-    )
-
-    lines.append("")
-
-    # --------------------------------------------------------
-    # TABLA / RESUMEN
-    # --------------------------------------------------------
-
-    lines.append("<b>📌 RESUMEN</b>")
-
-    for result in results:
-
-        asset = result["asset"]
-        metrics = result["metrics"]
-
-        name = asset["name"]
-        monthly = asset["monthly"]
-        signal = result["signal"]
-
-        if metrics:
-            week = format_percent(metrics["week"])
-            month = format_percent(metrics["month"])
-        else:
-            week = "N/D"
-            month = "N/D"
-
-        lines.append(
-            f"{signal} <b>{escape(name)}</b> "
-            f"({monthly} €/mes)"
-        )
-
-        lines.append(
-            f"   Semana: {week} | Mes: {month}"
-        )
-
-    lines.append("")
-
-    # --------------------------------------------------------
-    # DETALLE
-    # --------------------------------------------------------
-
-    lines.append("<b>🔎 ANÁLISIS DETALLADO</b>")
-
-    for result in results:
-
-        asset = result["asset"]
-        metrics = result["metrics"]
-        signal = result["signal"]
-        explanation = result["explanation"]
-
-        name = asset["name"]
-        ticker = asset["short"]
-        monthly = asset["monthly"]
-
-        lines.append("")
-
-        if asset["speculative"]:
-            category = "ESPECULATIVA"
-        else:
-            category = "ETF"
-
-        lines.append(
-            f"<b>{escape(ticker)} — "
-            f"{escape(name)}</b>"
-        )
-
-        lines.append(
-            f"💶 Aportación: {monthly} €/mes"
-        )
-
-        lines.append(
-            f"🏷️ Tipo: {category}"
-        )
-
-        if metrics:
-
-            lines.append(
-                f"💵 Precio: {format_price(metrics['current'])}"
-            )
-
-            lines.append(
-                f"📅 Semana: "
-                f"{format_percent(metrics['week'])}"
-            )
-
-            lines.append(
-                f"📆 Mes: "
-                f"{format_percent(metrics['month'])}"
-            )
-
-            lines.append(
-                f"📊 3 meses: "
-                f"{format_percent(metrics['three_months'])}"
-            )
-
-            lines.append(
-                f"📈 1 año: "
-                f"{format_percent(metrics['year'])}"
-            )
-
-            lines.append(
-                f"🏔️ Distancia máximo 52 sem.: "
-                f"{format_percent(metrics['distance_high'])}"
-            )
-
-            if metrics["ma50"] is not None:
-                position_ma50 = (
-                    "encima"
-                    if metrics["current"] > metrics["ma50"]
-                    else "debajo"
-                )
-
-                lines.append(
-                    f"📏 Precio {position_ma50} de MA50"
-                )
-
-            if metrics["ma200"] is not None:
-                position_ma200 = (
-                    "encima"
-                    if metrics["current"] > metrics["ma200"]
-                    else "debajo"
-                )
-
-                lines.append(
-                    f"📏 Precio {position_ma200} de MA200"
-                )
-
-        else:
-
-            lines.append(
-                "⚠️ No se han podido obtener datos de mercado."
-            )
-
-        lines.append("")
-
-        lines.append(
-            f"<b>{signal}</b>"
-        )
-
-        lines.append(
-            f"💡 {escape(explanation)}"
-        )
-
-        # ----------------------------------------------------
-        # NOTICIAS
-        # ----------------------------------------------------
-
-        news = result["news"]
-
-        if news:
-
-            lines.append("")
-            lines.append("<b>📰 Noticias recientes:</b>")
-
-            for item in news[:3]:
-
-                title = escape(
-                    item.get("title", "")
-                )
-
-                publisher = escape(
-                    item.get("publisher", "")
-                )
-
-                if publisher:
-                    lines.append(
-                        f"• {title} "
-                        f"<i>({publisher})</i>"
-                    )
-                else:
-                    lines.append(
-                        f"• {title}"
-                    )
-
-        else:
-
-            lines.append("")
-            lines.append(
-                "📰 No se han encontrado noticias recientes."
-            )
-
-    # --------------------------------------------------------
-    # PLAN DE APORTACIÓN
-    # --------------------------------------------------------
-
-    lines.append("")
-    lines.append(
-        "<b>💰 PLAN DE APORTACIÓN MENSUAL</b>"
-    )
-
-    lines.append(
-        "🌍 VWCE: <b>80 €</b>"
-    )
-
-    lines.append(
-        "📈 IWMO: <b>20 €</b>"
-    )
-
-    lines.append(
-        "🚀 RKLB: <b>10 €</b>"
-    )
-
-    lines.append(
-        "🛰️ ASTS: <b>8 €</b>"
-    )
-
-    lines.append(
-        "🧬 TEM: <b>7 €</b>"
-    )
-
-    lines.append(
-        "⚛️ IONQ: <b>5 €</b>"
-    )
-
-    lines.append(
-        "━━━━━━━━━━━━━━"
-    )
-
-    lines.append(
-        f"<b>TOTAL: {TOTAL_MONTHLY} €/mes</b>"
-    )
-
-    # --------------------------------------------------------
-    # CONCLUSIÓN
-    # --------------------------------------------------------
-
-    lines.append("")
-    lines.append(
-        "<b>🧠 CONCLUSIÓN DE LA SEMANA</b>"
-    )
-
-    lines.append(
-        "La estrategia base sigue siendo aportar de forma "
-        "periódica y evitar decisiones impulsivas por "
-        "movimientos de corto plazo."
-    )
-
-    lines.append("")
-
-    lines.append(
-        "En las posiciones especulativas, una caída de precio "
-        "por sí sola NO significa vender. El punto importante "
-        "es comprobar si ha cambiado la tesis de inversión."
-    )
-
-    lines.append("")
-
-    lines.append(
-        "⚠️ Este informe es informativo y utiliza reglas "
-        "automáticas. No constituye asesoramiento financiero "
-        "personalizado ni ejecuta operaciones."
-    )
-
-    return "\n".join(lines)
-
 
 
 # ============================================================
 # DIVIDIR MENSAJES LARGOS
 # ============================================================
 
-def split_message(text, max_length=3900):
-    """
-    Telegram tiene un límite de longitud.
-    Divide el informe en varios mensajes si es necesario.
-    """
+def split_message(
+    text,
+    max_length=3900
+):
 
     if len(text) <= max_length:
+
         return [text]
 
     parts = []
+
     current = ""
 
     for line in text.split("\n"):
 
-        # Si una línea individual fuese demasiado larga,
-        # la dividimos también.
         if len(line) > max_length:
 
             if current:
-                parts.append(current)
+
+                parts.append(
+                    current
+                )
+
                 current = ""
 
             while len(line) > max_length:
-                parts.append(line[:max_length])
-                line = line[max_length:]
+
+                parts.append(
+                    line[:max_length]
+                )
+
+                line = line[
+                    max_length:
+                ]
 
             if line:
+
                 current = line
 
             continue
 
-        if len(current) + len(line) + 1 > max_length:
+        if (
+            len(current)
+            + len(line)
+            + 1
+            > max_length
+        ):
 
             if current:
-                parts.append(current)
+
+                parts.append(
+                    current
+                )
 
             current = line
 
         else:
 
             if current:
+
                 current += "\n"
 
             current += line
 
     if current:
-        parts.append(current)
+
+        parts.append(
+            current
+        )
 
     return parts
 
@@ -907,71 +931,94 @@ def split_message(text, max_length=3900):
 def main():
 
     print("=" * 60)
-    print("BOT DE CARTERA")
-    print("=" * 60)
 
     print(
-        f"Cartera mensual: {TOTAL_MONTHLY} €"
+        "BOT DE CARTERA"
     )
 
-    if TOTAL_MONTHLY != 130:
-        raise RuntimeError(
-            "La suma de la cartera no es 130 €."
-        )
+    print("=" * 60)
 
-    if not TELEGRAM_BOT_TOKEN:
-        raise RuntimeError(
-            "No existe TELEGRAM_BOT_TOKEN."
-        )
+    validate_config()
 
-    if not CHAT_ID:
-        raise RuntimeError(
-            "No existe CHAT_ID."
+    print(
+        f"Cartera mensual: "
+        f"{TOTAL_MONTHLY:.0f} €"
+    )
+
+    print("Activos:")
+
+    for asset in PORTFOLIO:
+
+        print(
+            f"  "
+            f"{asset['display_ticker']}: "
+            f"{asset['monthly']:.0f} €/mes "
+            f"({asset['ticker']})"
         )
 
     results = []
 
     for asset in PORTFOLIO:
 
+        print(
+            f"Analizando "
+            f"{asset['display_ticker']}..."
+        )
+
         try:
 
-            result = analyze_asset(asset)
-
-            results.append(result)
-
-        except Exception as e:
-
-            print(
-                f"ERROR analizando "
-                f"{asset['ticker']}: {e}"
+            result = analyze_asset(
+                asset
             )
 
             results.append(
-                {
-                    "asset": asset,
-                    "metrics": None,
-                    "news": [],
-                    "signal": "⚪ ERROR",
-                    "explanation":
-                        "No se ha podido completar el análisis.",
-                }
+                result
             )
 
-    report = build_report(results)
+            print(
+                "  OK — semana: "
+                f"{pct(result['data']['week_change'])}"
+            )
 
-    messages = split_message(report)
+        except Exception as exc:
 
-    print(
-        f"Enviando {len(messages)} mensaje(s) a Telegram..."
-    )
+            print(
+                f"  ERROR en "
+                f"{asset['display_ticker']}: "
+                f"{exc}"
+            )
 
-    for message in messages:
-        send_telegram(message)
+            results.append(
 
-    print("Informe enviado correctamente.")
+                {
 
-    print("=" * 60)
+                    "asset": asset,
 
+                    "data": {
 
-if __name__ == "__main__":
-    main()
+                        "current": None,
+
+                        "day_change": None,
+
+                        "week_change": None,
+
+                        "month_change": None,
+
+                        "high_3m": None,
+
+                        "low_3m": None,
+
+                        "distance_high": None,
+
+                        "distance_low": None,
+
+                        "last_date": None,
+                    },
+
+                    "news": [],
+
+                    "action": "⚪ ERROR",
+
+                    "explanation": (
+                        "No se ha podido obtener "
+                        "corre
