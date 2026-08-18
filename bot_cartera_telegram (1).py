@@ -1,114 +1,377 @@
 import os
+import html
+from datetime import datetime, timezone
+
+import requests
 import yfinance as yf
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
 
-TICKERS = {
-    "RKLB": "Rocket Lab",
-    "ASTS": "AST SpaceMobile",
-    "TEM": "Tempus AI",
-    "IONQ": "IonQ",
+
+# ============================================================
+# CONFIGURACIÓN
+# ============================================================
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+CHAT_ID = os.getenv("CHAT_ID", "").strip()
+
+# Cambia aquí los activos que quieras vigilar.
+# Ejemplos:
+# "AAPL"       Apple
+# "NVDA"       Nvidia
+# "TSLA"       Tesla
+# "AMD"        AMD
+# "BTC-USD"    Bitcoin
+# "ETH-USD"    Ethereum
+# "QQQ"        Nasdaq 100
+# "SPY"        S&P 500
+
+TICKERS = [
+    "NVDA",
+    "TSLA",
+    "AMD",
+    "BTC-USD",
+    "ETH-USD",
+]
+
+# Porcentaje diario a partir del cual se genera una alerta.
+ALERTS = {
+    "NVDA": 3.0,
+    "TSLA": 4.0,
+    "AMD": 4.0,
+    "BTC-USD": 3.0,
+    "ETH-USD": 4.0,
 }
-MONTHLY = {"RKLB": 10, "ASTS": 8, "TEM": 7, "IONQ": 5}
-ALERTS = {t: 5.0 for t in TICKERS}
-LAST = {}
-TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def prices():
-    out = {}
-    for t in TICKERS:
-        try:
-            d = yf.Ticker(t).history(period="2d", interval="1d")
-            c = d["Close"].dropna()
-            if len(c):
-                p = float(c.iloc[-1])
-                prev = float(c.iloc[-2]) if len(c) > 1 else None
-                out[t] = (p, ((p/prev)-1)*100 if prev else None)
-        except Exception:
-            pass
-    return out
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 Bot de tu cartera especulativa\n\n"
-        "/precio - precios\n/carrrtera - plan mensual\n"
-        "/alertas - umbrales\n/setalerta RKLB 5 - cambia una alerta\n/news - noticias"
+# ============================================================
+# TELEGRAM
+# ============================================================
+
+def telegram_url(method):
+    return (
+        f"https://api.telegram.org/bot"
+        f"{TELEGRAM_BOT_TOKEN}/{method}"
     )
 
-async def precio(update, context):
-    p = prices()
-    lines = ["📊 Precios"]
-    for t, n in TICKERS.items():
-        if t in p:
-            price, ch = p[t]
-            lines.append(f"{t} ({n}): {price:.2f} USD ({ch:+.2f}%)" if ch is not None else f"{t}: {price:.2f} USD")
-    await update.message.reply_text("\n".join(lines))
 
-async def cartera(update, context):
-    total = sum(MONTHLY.values())
-    lines = ["💰 Plan mensual"]
-    for t, amount in MONTHLY.items():
-        lines.append(f"{t}: {amount} €/mes ({amount/total*100:.1f}%)")
-    lines.append(f"Total: {total} €/mes | 12 meses: {total*12} €")
-    await update.message.reply_text("\n".join(lines))
+def send_telegram(message):
+    if not TELEGRAM_BOT_TOKEN:
+        raise RuntimeError(
+            "Falta el secret TELEGRAM_BOT_TOKEN"
+        )
 
-async def alertas(update, context):
-    await update.message.reply_text(
-        "🔔 Alertas\n" + "\n".join(f"{t}: ±{v:.1f}%" for t, v in ALERTS.items())
-    )
-
-async def setalerta(update, context):
-    if len(context.args) != 2 or context.args[0].upper() not in TICKERS:
-        await update.message.reply_text("Uso: /setalerta RKLB 5")
-        return
-    try:
-        pct = float(context.args[1])
-        if pct <= 0: raise ValueError
-    except ValueError:
-        await update.message.reply_text("El porcentaje debe ser positivo.")
-        return
-    t = context.args[0].upper()
-    ALERTS[t] = pct
-    await update.message.reply_text(f"✅ {t}: alerta ±{pct:.1f}%")
-
-async def news(update, context):
-    lines = ["📰 Noticias disponibles"]
-    for t in TICKERS:
-        try:
-            for item in yf.Ticker(t).news[:2]:
-                title = item.get("title", "Sin título")
-                link = item.get("link", "")
-                lines.append(f"{t}: {title}\n{link}")
-        except Exception:
-            pass
-    await update.message.reply_text("\n\n".join(lines)[:4000])
-
-async def monitor(context: ContextTypes.DEFAULT_TYPE):
     if not CHAT_ID:
-        return
-    p = prices()
+        raise RuntimeError(
+            "Falta el secret CHAT_ID"
+        )
+
+    response = requests.post(
+        telegram_url("sendMessage"),
+        json={
+            "chat_id": CHAT_ID,
+            "text": message,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        },
+        timeout=30,
+    )
+
+    if not response.ok:
+        raise RuntimeError(
+            f"Telegram devolvió HTTP {response.status_code}: "
+            f"{response.text}"
+        )
+
+    data = response.json()
+
+    if not data.get("ok"):
+        raise RuntimeError(
+            f"Error de Telegram: {data}"
+        )
+
+
+# ============================================================
+# PRECIOS
+# ============================================================
+
+def get_price(ticker):
+    """
+    Obtiene precio actual y variación diaria aproximada.
+    """
+
+    try:
+        stock = yf.Ticker(ticker)
+
+        history = stock.history(
+            period="2d",
+            interval="1d",
+            auto_adjust=False,
+        )
+
+        if history.empty:
+            return None
+
+        closes = history["Close"].dropna()
+
+        if len(closes) == 0:
+            return None
+
+        current = float(closes.iloc[-1])
+
+        if len(closes) >= 2:
+            previous = float(closes.iloc[-2])
+
+            if previous != 0:
+                change = (
+                    (current / previous) - 1
+                ) * 100
+            else:
+                change = 0.0
+        else:
+            change = 0.0
+
+        return {
+            "ticker": ticker,
+            "price": current,
+            "change": change,
+        }
+
+    except Exception as exc:
+        print(
+            f"[ERROR] {ticker}: {exc}"
+        )
+        return None
+
+
+# ============================================================
+# CARTERA
+# ============================================================
+
+def get_portfolio():
+    results = []
+
+    for ticker in TICKERS:
+        result = get_price(ticker)
+
+        if result:
+            results.append(result)
+
+    return results
+
+
+# ============================================================
+# FORMATO
+# ============================================================
+
+def format_price(price):
+    if price >= 1000:
+        return f"{price:,.2f}"
+
+    if price >= 1:
+        return f"{price:,.2f}"
+
+    return f"{price:,.4f}"
+
+
+def change_symbol(change):
+    if change > 0:
+        return "🟢"
+
+    if change < 0:
+        return "🔴"
+
+    return "⚪"
+
+
+def format_portfolio(results):
+    lines = [
+        "💼 <b>CARPETA ESPECULATIVA</b>",
+        "",
+    ]
+
+    for item in results:
+        ticker = html.escape(item["ticker"])
+        price = format_price(item["price"])
+        change = item["change"]
+
+        symbol = change_symbol(change)
+
+        lines.append(
+            f"{symbol} <b>{ticker}</b>  "
+            f"{price}  "
+            f"<b>{change:+.2f}%</b>"
+        )
+
+    return "\n".join(lines)
+
+
+# ============================================================
+# ALERTAS
+# ============================================================
+
+def build_alerts(results):
     alerts = []
-    for t, (current, _) in p.items():
-        previous = LAST.get(t)
-        if previous:
-            change = (current/previous - 1)*100
-            if abs(change) >= ALERTS[t]:
-                alerts.append(f"🚨 {t}: {change:+.2f}% | {current:.2f} USD")
-        LAST[t] = current
-    if alerts:
-        await context.bot.send_message(chat_id=CHAT_ID, text="\n".join(alerts))
+
+    for item in results:
+        ticker = item["ticker"]
+        change = item["change"]
+
+        threshold = ALERTS.get(ticker)
+
+        if threshold is None:
+            continue
+
+        if abs(change) >= threshold:
+
+            if change > 0:
+                emoji = "🚀"
+                direction = "SUBIDA"
+            else:
+                emoji = "🚨"
+                direction = "CAÍDA"
+
+            alerts.append(
+                f"{emoji} <b>{direction}</b>\n"
+                f"<b>{html.escape(ticker)}</b>: "
+                f"{change:+.2f}%\n"
+                f"Umbral: ±{threshold:.2f}%"
+            )
+
+    return alerts
+
+
+# ============================================================
+# PRUEBA DE CONEXIÓN
+# ============================================================
+
+def test_telegram():
+    """
+    Comprueba que Telegram funciona.
+    """
+
+    now = datetime.now(
+        timezone.utc
+    ).strftime("%Y-%m-%d %H:%M UTC")
+
+    message = (
+        "🤖 <b>BOT CARTERA ESPECULATIVA</b>\n\n"
+        "✅ Bot conectado correctamente.\n"
+        f"🕐 {now}\n\n"
+        "Comenzando análisis de cartera..."
+    )
+
+    send_telegram(message)
+
+
+# ============================================================
+# EJECUCIÓN PRINCIPAL
+# ============================================================
 
 def main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("precio", precio))
-    app.add_handler(CommandHandler("cartera", cartera))
-    app.add_handler(CommandHandler("alertas", alertas))
-    app.add_handler(CommandHandler("setalerta", setalerta))
-    app.add_handler(CommandHandler("news", news))
-    app.job_queue.run_repeating(monitor, interval=3600, first=30)
-    app.run_polling()
+
+    print("=" * 60)
+    print("BOT CARTERA ESPECULATIVA")
+    print("=" * 60)
+
+    # --------------------------------------------------------
+    # Comprobar configuración
+    # --------------------------------------------------------
+
+    if not TELEGRAM_BOT_TOKEN:
+        raise RuntimeError(
+            "No existe TELEGRAM_BOT_TOKEN"
+        )
+
+    if not CHAT_ID:
+        raise RuntimeError(
+            "No existe CHAT_ID"
+        )
+
+    if not TICKERS:
+        raise RuntimeError(
+            "TICKERS está vacío"
+        )
+
+    print(
+        f"Activos a analizar: {', '.join(TICKERS)}"
+    )
+
+    # --------------------------------------------------------
+    # 1. Prueba Telegram
+    # --------------------------------------------------------
+
+    print("Enviando prueba a Telegram...")
+
+    test_telegram()
+
+    print("Telegram OK")
+
+    # --------------------------------------------------------
+    # 2. Obtener cartera
+    # --------------------------------------------------------
+
+    print("Consultando precios...")
+
+    results = get_portfolio()
+
+    if not results:
+        raise RuntimeError(
+            "No se pudo obtener ningún precio."
+        )
+
+    print(
+        f"Activos obtenidos: {len(results)}"
+    )
+
+    # --------------------------------------------------------
+    # 3. Mensaje de cartera
+    # --------------------------------------------------------
+
+    portfolio_message = format_portfolio(
+        results
+    )
+
+    send_telegram(
+        portfolio_message
+    )
+
+    print("Cartera enviada.")
+
+    # --------------------------------------------------------
+    # 4. Alertas
+    # --------------------------------------------------------
+
+    alerts = build_alerts(results)
+
+    if alerts:
+
+        alert_message = (
+            "⚠️ <b>ALERTAS DE MERCADO</b>\n\n"
+            + "\n\n".join(alerts)
+        )
+
+        send_telegram(
+            alert_message
+        )
+
+        print(
+            f"Alertas enviadas: {len(alerts)}"
+        )
+
+    else:
+
+        print(
+            "No hay movimientos que superen "
+            "los umbrales."
+        )
+
+    # --------------------------------------------------------
+    # 5. Final
+    # --------------------------------------------------------
+
+    print("=" * 60)
+    print("BOT FINALIZADO CORRECTAMENTE")
+    print("=" * 60)
+
 
 if __name__ == "__main__":
     main()
