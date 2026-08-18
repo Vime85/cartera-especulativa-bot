@@ -844,8 +844,134 @@ def build_report(results):
     return "\n".join(lines)
 
 
+
 # ============================================================
 # DIVIDIR MENSAJES LARGOS
 # ============================================================
 
-def split_m
+def split_message(text, max_length=3900):
+    """
+    Telegram tiene un límite de longitud.
+    Divide el informe en varios mensajes si es necesario.
+    """
+
+    if len(text) <= max_length:
+        return [text]
+
+    parts = []
+    current = ""
+
+    for line in text.split("\n"):
+
+        # Si una línea individual fuese demasiado larga,
+        # la dividimos también.
+        if len(line) > max_length:
+
+            if current:
+                parts.append(current)
+                current = ""
+
+            while len(line) > max_length:
+                parts.append(line[:max_length])
+                line = line[max_length:]
+
+            if line:
+                current = line
+
+            continue
+
+        if len(current) + len(line) + 1 > max_length:
+
+            if current:
+                parts.append(current)
+
+            current = line
+
+        else:
+
+            if current:
+                current += "\n"
+
+            current += line
+
+    if current:
+        parts.append(current)
+
+    return parts
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
+    print("=" * 60)
+    print("BOT DE CARTERA")
+    print("=" * 60)
+
+    print(
+        f"Cartera mensual: {TOTAL_MONTHLY} €"
+    )
+
+    if TOTAL_MONTHLY != 130:
+        raise RuntimeError(
+            "La suma de la cartera no es 130 €."
+        )
+
+    if not TELEGRAM_BOT_TOKEN:
+        raise RuntimeError(
+            "No existe TELEGRAM_BOT_TOKEN."
+        )
+
+    if not CHAT_ID:
+        raise RuntimeError(
+            "No existe CHAT_ID."
+        )
+
+    results = []
+
+    for asset in PORTFOLIO:
+
+        try:
+
+            result = analyze_asset(asset)
+
+            results.append(result)
+
+        except Exception as e:
+
+            print(
+                f"ERROR analizando "
+                f"{asset['ticker']}: {e}"
+            )
+
+            results.append(
+                {
+                    "asset": asset,
+                    "metrics": None,
+                    "news": [],
+                    "signal": "⚪ ERROR",
+                    "explanation":
+                        "No se ha podido completar el análisis.",
+                }
+            )
+
+    report = build_report(results)
+
+    messages = split_message(report)
+
+    print(
+        f"Enviando {len(messages)} mensaje(s) a Telegram..."
+    )
+
+    for message in messages:
+        send_telegram(message)
+
+    print("Informe enviado correctamente.")
+
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
