@@ -1021,4 +1021,43 @@ def main():
 
                     "explanation": (
                         "No se ha podido obtener "
-                        "corre
+                        "correctamente la información "
+                        "de este activo."
+                    ),
+                }
+            )
+
+    report = build_report(
+        results
+    )
+
+    messages = split_message(
+        report
+    )
+
+    print(
+        f"Enviando "
+        f"{len(messages)} mensaje(s) "
+        f"a Telegram..."
+    )
+
+    for message in messages:
+
+        send_telegram(
+            message
+        )
+
+    print(
+        "Informe enviado correctamente."
+    )
+
+    print("=" * 60)
+
+
+# ============================================================
+# EJECUCIÓN
+# ============================================================
+
+if __name__ == "__main__":
+
+    main()
