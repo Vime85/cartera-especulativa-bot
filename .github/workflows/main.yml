@@ -59,29 +59,3 @@ jobs:
 
         run: |
           python bot_cartera_telegram.py
-
-      # ----------------------------------------------------
-      # Instalar dependencias
-      # ----------------------------------------------------
-
-      - name: Instalar dependencias
-        run: |
-          python -m pip install --upgrade pip
-          pip install yfinance requests
-
-
-      # ----------------------------------------------------
-      # Ejecutar bot
-      # ----------------------------------------------------
-
-      - name: Ejecutar bot
-
-        env:
-
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-
-        run: |
-
-          python bot_cartera_telegram.py
