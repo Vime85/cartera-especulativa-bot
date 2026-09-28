@@ -13,16 +13,18 @@ import yfinance as yf
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("CHAT_ID", "").strip()
 
-TOTAL_MONTHLY = 130.0
+TOTAL_MONTHLY = 145.0
+ETF_MONTHLY = 110.0
+SPECULATIVE_MONTHLY = 35.0
 
 # ============================================================
 # CARTERA MENSUAL
 # ============================================================
 #
-# 100 € ETFs
-#  30 € especulativa
+# 110 € ETFs
+#  35 € especulativa
 #
-# TOTAL = 130 €
+# TOTAL = 145 €
 #
 
 PORTFOLIO = [
@@ -32,10 +34,10 @@ PORTFOLIO = [
     # --------------------------------------------------------
 
     {
-        "name": "Vanguard FTSE All-World UCITS ETF",
+        "name": "Vanguard FTSE All-World UCITS ETF (Acc)",
         "ticker": "VWCE.DE",
         "display_ticker": "VWCE",
-        "monthly": 80.0,
+        "monthly": 90.0,
         "type": "ETF",
         "role": "Núcleo global",
     },
@@ -45,7 +47,7 @@ PORTFOLIO = [
     # --------------------------------------------------------
 
     {
-        "name": "iShares Edge MSCI World Momentum Factor UCITS ETF",
+        "name": "iShares Edge MSCI World Momentum Factor UCITS ETF USD (Acc)",
         "ticker": "IS3R.DE",
         "display_ticker": "IS3R",
         "monthly": 20.0,
@@ -92,6 +94,15 @@ PORTFOLIO = [
         "type": "ESPECULATIVA",
         "role": "Computación cuántica",
     },
+
+    {
+        "name": "Nebius",
+        "ticker": "NBIS",
+        "display_ticker": "NBIS",
+        "monthly": 5.0,
+        "type": "ESPECULATIVA",
+        "role": "Infraestructura de IA",
+    },
 ]
 
 
@@ -121,6 +132,37 @@ def validate_config():
         raise RuntimeError(
             f"La cartera suma {total:.2f} €, "
             f"pero debería sumar {TOTAL_MONTHLY:.2f} €."
+        )
+
+    etf_total = sum(
+        item["monthly"]
+        for item in PORTFOLIO
+        if item["type"] == "ETF"
+    )
+
+    if round(etf_total, 2) != round(ETF_MONTHLY, 2):
+
+        raise RuntimeError(
+            f"El bloque ETF suma {etf_total:.2f} €, "
+            f"pero debería sumar {ETF_MONTHLY:.2f} €."
+        )
+
+    speculative_total = sum(
+        item["monthly"]
+        for item in PORTFOLIO
+        if item["type"] == "ESPECULATIVA"
+    )
+
+    if round(speculative_total, 2) != round(
+        SPECULATIVE_MONTHLY,
+        2,
+    ):
+
+        raise RuntimeError(
+            f"El bloque especulativo suma "
+            f"{speculative_total:.2f} €, "
+            f"pero debería sumar "
+            f"{SPECULATIVE_MONTHLY:.2f} €."
         )
 
     if not TELEGRAM_BOT_TOKEN:
@@ -567,7 +609,8 @@ def build_report(results):
     lines = []
 
     lines.append(
-        "📊 <b>INFORME SEMANAL — CARTERA 130 €</b>"
+        f"📊 <b>INFORME SEMANAL — CARTERA "
+        f"{TOTAL_MONTHLY:.0f} €</b>"
     )
 
     lines.append(
@@ -578,9 +621,9 @@ def build_report(results):
 
     lines.append(
         "Plan mensual: "
-        "<b>130 €</b> — "
-        "100 € ETFs + "
-        "30 € especulativo."
+        f"<b>{TOTAL_MONTHLY:.0f} €</b> — "
+        f"{ETF_MONTHLY:.0f} € ETFs + "
+        f"{SPECULATIVE_MONTHLY:.0f} € especulativo."
     )
 
     lines.append("")
@@ -766,35 +809,20 @@ def build_report(results):
 
     lines.append("")
 
-    lines.append(
-        "1. <b>VWCE:</b> mantener "
-        "80 €/mes."
-    )
+    for index, asset in enumerate(PORTFOLIO, start=1):
 
-    lines.append(
-        "2. <b>IS3R:</b> mantener "
-        "20 €/mes."
-    )
+        suffix = (
+            " salvo cambio de tesis."
+            if asset["type"] == "ESPECULATIVA"
+            else "."
+        )
 
-    lines.append(
-        "3. <b>RKLB:</b> mantener "
-        "10 €/mes salvo cambio de tesis."
-    )
-
-    lines.append(
-        "4. <b>ASTS:</b> mantener "
-        "8 €/mes salvo cambio de tesis."
-    )
-
-    lines.append(
-        "5. <b>TEM:</b> mantener "
-        "7 €/mes salvo cambio de tesis."
-    )
-
-    lines.append(
-        "6. <b>IONQ:</b> mantener "
-        "5 €/mes salvo cambio de tesis."
-    )
+        lines.append(
+            f"{index}. "
+            f"<b>{html.escape(asset['display_ticker'])}:</b> "
+            f"mantener {asset['monthly']:.0f} €/mes"
+            f"{suffix}"
+        )
 
     lines.append("")
 
