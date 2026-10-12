@@ -13,18 +13,18 @@ import yfinance as yf
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("CHAT_ID", "").strip()
 
-TOTAL_MONTHLY = 145.0
+TOTAL_MONTHLY = 144.0
 ETF_MONTHLY = 110.0
-SPECULATIVE_MONTHLY = 35.0
+SPECULATIVE_MONTHLY = 34.0
 
 # ============================================================
 # CARTERA MENSUAL
 # ============================================================
 #
-# 110 € ETFs
-#  35 € especulativa
+# 110 € ETFs de núcleo
+#  34 € especulativa
 #
-# TOTAL = 145 €
+# TOTAL = 144 €
 #
 
 PORTFOLIO = [
@@ -63,7 +63,7 @@ PORTFOLIO = [
         "name": "Rocket Lab",
         "ticker": "RKLB",
         "display_ticker": "RKLB",
-        "monthly": 10.0,
+        "monthly": 0.0,
         "type": "ESPECULATIVA",
         "role": "Espacial",
     },
@@ -72,7 +72,7 @@ PORTFOLIO = [
         "name": "AST SpaceMobile",
         "ticker": "ASTS",
         "display_ticker": "ASTS",
-        "monthly": 8.0,
+        "monthly": 0.0,
         "type": "ESPECULATIVA",
         "role": "Satélites / conectividad",
     },
@@ -81,7 +81,7 @@ PORTFOLIO = [
         "name": "Tempus AI",
         "ticker": "TEM",
         "display_ticker": "TEM",
-        "monthly": 7.0,
+        "monthly": 0.0,
         "type": "ESPECULATIVA",
         "role": "IA / salud",
     },
@@ -90,7 +90,7 @@ PORTFOLIO = [
         "name": "IonQ",
         "ticker": "IONQ",
         "display_ticker": "IONQ",
-        "monthly": 5.0,
+        "monthly": 0.0,
         "type": "ESPECULATIVA",
         "role": "Computación cuántica",
     },
@@ -99,9 +99,21 @@ PORTFOLIO = [
         "name": "Nebius",
         "ticker": "NBIS",
         "display_ticker": "NBIS",
-        "monthly": 5.0,
+        "monthly": 0.0,
         "type": "ESPECULATIVA",
         "role": "Infraestructura de IA",
+    },
+
+    {
+        "name": "WisdomTree Tech Megatrends UCITS ETF",
+        "ticker": "WTMT.DE",
+        "display_ticker": "WTMT",
+        "isin": "IE0007Z28IJ7",
+        "monthly": 34.0,
+        "purchases_per_month": 2,
+        "amount_per_purchase": 17.0,
+        "type": "ESPECULATIVA",
+        "role": "ETF temático tecnológico",
     },
 ]
 
@@ -164,6 +176,29 @@ def validate_config():
             f"pero debería sumar "
             f"{SPECULATIVE_MONTHLY:.2f} €."
         )
+
+    for item in PORTFOLIO:
+
+        if "purchases_per_month" not in item:
+            continue
+
+        purchase_total = (
+            item["purchases_per_month"]
+            * item["amount_per_purchase"]
+        )
+
+        if round(purchase_total, 2) != round(
+            item["monthly"],
+            2,
+        ):
+
+            raise RuntimeError(
+                f"El plan de compras de "
+                f"{item['display_ticker']} suma "
+                f"{purchase_total:.2f} €, "
+                f"pero su aportación mensual es "
+                f"{item['monthly']:.2f} €."
+            )
 
     if not TELEGRAM_BOT_TOKEN:
 
@@ -554,6 +589,14 @@ def get_action(
             "precio. Revisar las noticias."
         )
 
+    if asset["monthly"] == 0:
+
+        return (
+            "🟢 MANTENER",
+            "Mantener la posición; sin nuevas "
+            "compras periódicas."
+        )
+
     return (
         "🟢 MANTENER",
         f"Continuar con la aportación prevista "
@@ -622,7 +665,7 @@ def build_report(results):
     lines.append(
         "Plan mensual: "
         f"<b>{TOTAL_MONTHLY:.0f} €</b> — "
-        f"{ETF_MONTHLY:.0f} € ETFs + "
+        f"{ETF_MONTHLY:.0f} € ETFs de núcleo + "
         f"{SPECULATIVE_MONTHLY:.0f} € especulativo."
     )
 
@@ -640,10 +683,34 @@ def build_report(results):
 
     for asset in PORTFOLIO:
 
-        lines.append(
-            f"• <b>{html.escape(asset['display_ticker'])}</b> "
-            f"— {money(asset['monthly'])}/mes"
-        )
+        if asset["monthly"] == 0:
+
+            lines.append(
+                f"• <b>{html.escape(asset['display_ticker'])}</b> "
+                f"— posición mantenida; sin nuevas "
+                f"compras periódicas"
+            )
+
+        elif "purchases_per_month" in asset:
+
+            lines.append(
+                f"• <b>{html.escape(asset['display_ticker'])}</b> "
+                f"— {asset['purchases_per_month']} compras de "
+                f"{money(asset['amount_per_purchase'])} "
+                f"({money(asset['monthly'])}/mes)"
+            )
+
+            lines.append(
+                f"  {html.escape(asset['name'])} · "
+                f"ISIN {html.escape(asset['isin'])}"
+            )
+
+        else:
+
+            lines.append(
+                f"• <b>{html.escape(asset['display_ticker'])}</b> "
+                f"— {money(asset['monthly'])}/mes"
+            )
 
     lines.append("")
 
@@ -811,17 +878,31 @@ def build_report(results):
 
     for index, asset in enumerate(PORTFOLIO, start=1):
 
-        suffix = (
-            " salvo cambio de tesis."
-            if asset["type"] == "ESPECULATIVA"
-            else "."
-        )
+        if asset["monthly"] == 0:
+
+            instruction = (
+                "mantener la posición; sin nuevas "
+                "compras periódicas."
+            )
+
+        elif "purchases_per_month" in asset:
+
+            instruction = (
+                f"realizar {asset['purchases_per_month']} compras "
+                f"de {asset['amount_per_purchase']:.0f} € al mes "
+                f"({asset['monthly']:.0f} €/mes)."
+            )
+
+        else:
+
+            instruction = (
+                f"mantener {asset['monthly']:.0f} €/mes."
+            )
 
         lines.append(
             f"{index}. "
             f"<b>{html.escape(asset['display_ticker'])}:</b> "
-            f"mantener {asset['monthly']:.0f} €/mes"
-            f"{suffix}"
+            f"{instruction}"
         )
 
     lines.append("")
