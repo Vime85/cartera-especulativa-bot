@@ -1,0 +1,23 @@
+{
+  "baseline_date": "2026-11-05",
+  "baseline_initialized": false,
+  "estimated_units": {},
+  "last_purchase_date": null,
+  "positions": {
+    "asts": 8.03,
+    "bitcoin": null,
+    "fidelity_world": 0.0,
+    "ionq": 6.78,
+    "materials": 9.88,
+    "momentum": 51.69,
+    "nbis": 5.61,
+    "rklb": 13.51,
+    "tem": 13.98,
+    "vanguard_em": 0.0,
+    "vwce": 250.57,
+    "wtmt": 29.66
+  },
+  "processed_purchases": [],
+  "static_values": {},
+  "visible_total": 389.71
+}

@@ -1,6 +1,8 @@
 import os
 import html
-from datetime import datetime, timezone
+import json
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import requests
 import yfinance as yf
@@ -13,107 +15,155 @@ import yfinance as yf
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("CHAT_ID", "").strip()
 
-TOTAL_MONTHLY = 144.0
-ETF_MONTHLY = 110.0
-SPECULATIVE_MONTHLY = 34.0
+TOTAL_WEEKLY = 45.0
+FIRST_PURCHASE_DATE = date(2026, 11, 16)
+STATE_PATH = Path(__file__).with_name("portfolio_state.json")
 
 # ============================================================
-# CARTERA MENSUAL
+# CARTERA SEMANAL
 # ============================================================
 #
-# 110 € ETFs de núcleo
-#  34 € especulativa
-#
-# TOTAL = 144 €
+# TOTAL = 45 €/semana
 #
 
 PORTFOLIO = [
 
     # --------------------------------------------------------
-    # ETF PRINCIPAL
+    # APORTACIONES SEMANALES
     # --------------------------------------------------------
 
     {
-        "name": "Vanguard FTSE All-World UCITS ETF (Acc)",
-        "ticker": "VWCE.DE",
-        "display_ticker": "VWCE",
-        "monthly": 90.0,
-        "type": "ETF",
+        "id": "fidelity_world",
+        "name": "Fidelity MSCI World Index P EUR Acc",
+        "ticker": None,
+        "display_ticker": "Fidelity World",
+        "isin": "IE00BYX5NX33",
+        "weekly": 23.0,
+        "type": "CORE",
         "role": "Núcleo global",
+        "fallback_price": 14.54,
+        "fallback_price_date": "2026-11-04",
+        "price_source": "Último NAV conocido",
     },
 
-    # --------------------------------------------------------
-    # ETF MOMENTUM
-    # --------------------------------------------------------
+    {
+        "id": "vanguard_em",
+        "name": "Vanguard Emerging Markets Stock Index EUR Acc",
+        "ticker": None,
+        "display_ticker": "Vanguard EM",
+        "isin": "IE0031786696",
+        "weekly": 2.0,
+        "type": "CORE",
+        "role": "Mercados emergentes",
+        "fallback_price": 292.83,
+        "fallback_price_date": "2026-11-04",
+        "price_source": "Último NAV conocido",
+    },
 
     {
+        "id": "momentum",
         "name": "iShares Edge MSCI World Momentum Factor UCITS ETF USD (Acc)",
         "ticker": "IS3R.DE",
         "display_ticker": "IS3R",
-        "monthly": 20.0,
-        "type": "ETF",
+        "weekly": 5.0,
+        "type": "SATELLITE",
         "role": "Factor momentum",
     },
 
-    # --------------------------------------------------------
-    # CARTERA ESPECULATIVA
-    # --------------------------------------------------------
-
     {
-        "name": "Rocket Lab",
-        "ticker": "RKLB",
-        "display_ticker": "RKLB",
-        "monthly": 0.0,
-        "type": "ESPECULATIVA",
-        "role": "Espacial",
+        "id": "materials",
+        "name": "Global X Disruptive Materials UCITS ETF USD Acc",
+        "ticker": "D6AT.DE",
+        "display_ticker": "D6AT",
+        "isin": "IE000FP52WM7",
+        "weekly": 5.0,
+        "type": "SATELLITE",
+        "role": "Materiales disruptivos",
     },
 
     {
-        "name": "AST SpaceMobile",
-        "ticker": "ASTS",
-        "display_ticker": "ASTS",
-        "monthly": 0.0,
-        "type": "ESPECULATIVA",
-        "role": "Satélites / conectividad",
-    },
-
-    {
-        "name": "Tempus AI",
-        "ticker": "TEM",
-        "display_ticker": "TEM",
-        "monthly": 0.0,
-        "type": "ESPECULATIVA",
-        "role": "IA / salud",
-    },
-
-    {
-        "name": "IonQ",
-        "ticker": "IONQ",
-        "display_ticker": "IONQ",
-        "monthly": 0.0,
-        "type": "ESPECULATIVA",
-        "role": "Computación cuántica",
-    },
-
-    {
-        "name": "Nebius",
-        "ticker": "NBIS",
-        "display_ticker": "NBIS",
-        "monthly": 0.0,
-        "type": "ESPECULATIVA",
-        "role": "Infraestructura de IA",
-    },
-
-    {
+        "id": "wtmt",
         "name": "WisdomTree Tech Megatrends UCITS ETF",
         "ticker": "WTMT.DE",
         "display_ticker": "WTMT",
         "isin": "IE0007Z28IJ7",
-        "monthly": 34.0,
-        "purchases_per_month": 2,
-        "amount_per_purchase": 17.0,
-        "type": "ESPECULATIVA",
+        "weekly": 5.0,
+        "type": "SATELLITE",
         "role": "ETF temático tecnológico",
+    },
+
+    {
+        "id": "bitcoin",
+        "name": "Bitcoin",
+        "ticker": "BTC-EUR",
+        "display_ticker": "BTC",
+        "weekly": 5.0,
+        "type": "SATELLITE",
+        "role": "Criptoactivo",
+    },
+
+    # --------------------------------------------------------
+    # POSICIONES HISTÓRICAS SIN NUEVAS COMPRAS
+    # --------------------------------------------------------
+
+    {
+        "id": "vwce",
+        "name": "Vanguard FTSE All-World UCITS ETF USD (Acc)",
+        "ticker": "VWCE.DE",
+        "display_ticker": "VWCE",
+        "weekly": 0.0,
+        "type": "HISTORICAL",
+        "role": "Núcleo global histórico",
+    },
+
+    {
+        "id": "rklb",
+        "name": "Rocket Lab",
+        "ticker": "RKLB",
+        "display_ticker": "RKLB",
+        "weekly": 0.0,
+        "type": "HISTORICAL",
+        "role": "Espacial",
+    },
+
+    {
+        "id": "asts",
+        "name": "AST SpaceMobile",
+        "ticker": "ASTS",
+        "display_ticker": "ASTS",
+        "weekly": 0.0,
+        "type": "HISTORICAL",
+        "role": "Satélites / conectividad",
+    },
+
+    {
+        "id": "tem",
+        "name": "Tempus AI",
+        "ticker": "TEM",
+        "display_ticker": "TEM",
+        "weekly": 0.0,
+        "type": "HISTORICAL",
+        "role": "IA / salud",
+    },
+
+    {
+        "id": "ionq",
+        "name": "IonQ",
+        "ticker": "IONQ",
+        "display_ticker": "IONQ",
+        "weekly": 0.0,
+        "type": "HISTORICAL",
+        "role": "Computación cuántica",
+    },
+
+    {
+        "id": "nbis",
+        "name": "Nebius Group",
+        "ticker": "NBIS",
+        "display_ticker": "NBIS",
+        "weekly": 0.0,
+        "type": "HISTORICAL",
+        "role": "Infraestructura de IA",
     },
 ]
 
@@ -135,70 +185,24 @@ TELEGRAM_TIMEOUT = 30
 def validate_config():
 
     total = sum(
-        item["monthly"]
+        item["weekly"]
         for item in PORTFOLIO
     )
 
-    if round(total, 2) != round(TOTAL_MONTHLY, 2):
+    if round(total, 2) != round(TOTAL_WEEKLY, 2):
 
         raise RuntimeError(
-            f"La cartera suma {total:.2f} €, "
-            f"pero debería sumar {TOTAL_MONTHLY:.2f} €."
+            f"Las aportaciones semanales suman {total:.2f} €, "
+            f"pero deberían sumar {TOTAL_WEEKLY:.2f} €."
         )
 
-    etf_total = sum(
-        item["monthly"]
-        for item in PORTFOLIO
-        if item["type"] == "ETF"
-    )
+    ids = [item["id"] for item in PORTFOLIO]
 
-    if round(etf_total, 2) != round(ETF_MONTHLY, 2):
+    if len(ids) != len(set(ids)):
 
         raise RuntimeError(
-            f"El bloque ETF suma {etf_total:.2f} €, "
-            f"pero debería sumar {ETF_MONTHLY:.2f} €."
+            "Existen identificadores de activos duplicados."
         )
-
-    speculative_total = sum(
-        item["monthly"]
-        for item in PORTFOLIO
-        if item["type"] == "ESPECULATIVA"
-    )
-
-    if round(speculative_total, 2) != round(
-        SPECULATIVE_MONTHLY,
-        2,
-    ):
-
-        raise RuntimeError(
-            f"El bloque especulativo suma "
-            f"{speculative_total:.2f} €, "
-            f"pero debería sumar "
-            f"{SPECULATIVE_MONTHLY:.2f} €."
-        )
-
-    for item in PORTFOLIO:
-
-        if "purchases_per_month" not in item:
-            continue
-
-        purchase_total = (
-            item["purchases_per_month"]
-            * item["amount_per_purchase"]
-        )
-
-        if round(purchase_total, 2) != round(
-            item["monthly"],
-            2,
-        ):
-
-            raise RuntimeError(
-                f"El plan de compras de "
-                f"{item['display_ticker']} suma "
-                f"{purchase_total:.2f} €, "
-                f"pero su aportación mensual es "
-                f"{item['monthly']:.2f} €."
-            )
 
     if not TELEGRAM_BOT_TOKEN:
 
@@ -240,6 +244,14 @@ def pct(value):
     return f"{sign}{value:.2f}%"
 
 
+def weight_pct(value):
+
+    if value is None:
+        return "N/D"
+
+    return f"{value:.2f}%"
+
+
 def safe_float(value):
 
     try:
@@ -276,6 +288,302 @@ def fmt_date(value):
     except Exception:
 
         return "N/D"
+
+
+# ============================================================
+# ESTADO Y ESTIMACIÓN DE CARTERA
+# ============================================================
+
+def load_state(path=STATE_PATH):
+
+    with open(path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def save_state(state, path=STATE_PATH):
+
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(
+            state,
+            handle,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+
+
+def scheduled_purchase_dates(as_of):
+
+    if as_of < FIRST_PURCHASE_DATE:
+        return []
+
+    dates = []
+    current = FIRST_PURCHASE_DATE
+
+    while current <= as_of:
+        dates.append(current)
+        current += timedelta(days=7)
+
+    return dates
+
+
+def next_purchase_date(as_of):
+
+    current = FIRST_PURCHASE_DATE
+
+    while current <= as_of:
+        current += timedelta(days=7)
+
+    return current
+
+
+def get_price_history(asset, as_of):
+
+    if not asset.get("ticker"):
+        return {
+            date.fromisoformat(asset["fallback_price_date"]):
+            asset["fallback_price"]
+        }
+
+    ticker = yf.Ticker(asset["ticker"])
+    history = ticker.history(
+        start="2026-10-27",
+        end=(as_of + timedelta(days=3)).isoformat(),
+        interval="1d",
+        auto_adjust=True,
+    )
+
+    if history is None or history.empty:
+        return {}
+
+    prices = {}
+
+    for timestamp, value in history["Close"].dropna().items():
+        prices[timestamp.date()] = float(value)
+
+    return prices
+
+
+def closest_price(prices, target_date):
+
+    if not prices:
+        return None
+
+    _, value = min(
+        prices.items(),
+        key=lambda item: abs(
+            (item[0] - target_date).days
+        ),
+    )
+
+    return value
+
+
+def latest_price(prices, as_of):
+
+    candidates = [
+        (price_date, value)
+        for price_date, value in prices.items()
+        if price_date <= as_of
+    ]
+
+    if not candidates:
+        return None
+
+    return max(candidates)[1]
+
+
+def purchase_price(asset, prices, purchase_date, as_of):
+
+    if not asset.get("ticker"):
+        return asset.get("fallback_price")
+
+    candidates = [
+        (price_date, value)
+        for price_date, value in prices.items()
+        if purchase_date <= price_date <= as_of
+    ]
+
+    if not candidates:
+        return None
+
+    return min(candidates)[1]
+
+
+def concentration_status(weight):
+
+    if weight is None:
+        return "MANTENER"
+
+    if weight >= 20:
+        return "REVISAR PARA VENTA"
+
+    if weight >= 15:
+        return "REVISAR"
+
+    return "MANTENER"
+
+
+def estimate_portfolio(state, price_histories, as_of):
+
+    baseline_date = date.fromisoformat(
+        state["baseline_date"]
+    )
+    baseline = state["positions"]
+    units = {
+        key: float(value)
+        for key, value in state.get(
+            "estimated_units",
+            {},
+        ).items()
+    }
+    static_values = {
+        key: float(value)
+        for key, value in state.get(
+            "static_values",
+            {},
+        ).items()
+    }
+
+    if not state.get("baseline_initialized"):
+
+        for asset in PORTFOLIO:
+            baseline_value = baseline.get(
+                asset["id"]
+            )
+
+            if baseline_value is None:
+                continue
+
+            price = closest_price(
+                price_histories.get(
+                    asset["id"],
+                    {},
+                ),
+                baseline_date,
+            )
+
+            if price:
+                units[asset["id"]] = (
+                    baseline_value / price
+                )
+            else:
+                static_values[asset["id"]] = (
+                    baseline_value
+                )
+
+        state["baseline_initialized"] = True
+
+    processed = set(
+        state.get("processed_purchases", [])
+    )
+    purchases_added = []
+    missing_prices = []
+
+    for purchase_date in scheduled_purchase_dates(as_of):
+
+        for asset in PORTFOLIO:
+
+            if asset["weekly"] <= 0:
+                continue
+
+            purchase_key = (
+                f"{purchase_date.isoformat()}:"
+                f"{asset['id']}"
+            )
+
+            if purchase_key in processed:
+                continue
+
+            price = purchase_price(
+                asset,
+                price_histories.get(
+                    asset["id"],
+                    {},
+                ),
+                purchase_date,
+                as_of,
+            )
+
+            if not price:
+                missing_prices.append(
+                    purchase_key
+                )
+                continue
+
+            units[asset["id"]] = (
+                units.get(asset["id"], 0.0)
+                + asset["weekly"] / price
+            )
+            processed.add(purchase_key)
+            purchases_added.append(purchase_key)
+
+    positions = {}
+    total = 0.0
+
+    for asset in PORTFOLIO:
+        asset_id = asset["id"]
+        current_price = latest_price(
+            price_histories.get(asset_id, {}),
+            as_of,
+        )
+        estimated_units = units.get(asset_id)
+
+        if estimated_units is not None and current_price:
+            value = estimated_units * current_price
+        elif asset_id in static_values:
+            value = static_values[asset_id]
+        else:
+            value = 0.0
+
+        positions[asset_id] = {
+            "value": value,
+            "units": estimated_units,
+            "price": current_price,
+            "weight": None,
+        }
+        total += value
+
+    if total:
+
+        for position in positions.values():
+            position["weight"] = (
+                position["value"] / total * 100
+            )
+
+    state["estimated_units"] = units
+    state["static_values"] = static_values
+    state["processed_purchases"] = sorted(
+        processed
+    )
+    processed_dates = [
+        date.fromisoformat(item.split(":", 1)[0])
+        for item in processed
+    ]
+    state["last_purchase_date"] = (
+        max(processed_dates).isoformat()
+        if processed_dates
+        else None
+    )
+
+    missing_baseline = [
+        asset["id"]
+        for asset in PORTFOLIO
+        if baseline.get(asset["id"]) is None
+    ]
+
+    return {
+        "total": total,
+        "positions": positions,
+        "purchases_added": purchases_added,
+        "missing_prices": missing_prices,
+        "missing_baseline": missing_baseline,
+        "incomplete": bool(
+            missing_baseline or missing_prices
+        ),
+        "state": state,
+    }
 
 
 # ============================================================
@@ -527,6 +835,14 @@ def get_action(
     news
 ):
 
+    if asset["weekly"] == 0:
+
+        return (
+            "MANTENER",
+            "Posición histórica; sin nuevas "
+            "compras periódicas ni venta automática."
+        )
+
     week = data.get(
         "week_change"
     )
@@ -534,16 +850,16 @@ def get_action(
     if week is None:
 
         return (
-            "⚪ SIN DATOS",
-            "No hay suficientes datos "
-            "para valorar esta semana."
+            "MANTENER",
+            "Precio de mercado no disponible; "
+            "mantener la aportación semanal prevista."
         )
 
     # --------------------------------------------------------
-    # ETFs
+    # NÚCLEO
     # --------------------------------------------------------
 
-    if asset["type"] == "ETF":
+    if asset["type"] == "CORE":
 
         if abs(week) >= STRONG_WEEKLY_ALERT:
 
@@ -557,11 +873,11 @@ def get_action(
         return (
             "🟢 MANTENER",
             f"Seguir con la aportación prevista "
-            f"de {money(asset['monthly'])}/mes."
+            f"de {money(asset['weekly'])}/semana."
         )
 
     # --------------------------------------------------------
-    # ESPECULATIVAS
+    # SATÉLITES
     # --------------------------------------------------------
 
     if abs(week) >= STRONG_WEEKLY_ALERT:
@@ -589,18 +905,10 @@ def get_action(
             "precio. Revisar las noticias."
         )
 
-    if asset["monthly"] == 0:
-
-        return (
-            "🟢 MANTENER",
-            "Mantener la posición; sin nuevas "
-            "compras periódicas."
-        )
-
     return (
         "🟢 MANTENER",
         f"Continuar con la aportación prevista "
-        f"de {money(asset['monthly'])}/mes."
+        f"de {money(asset['weekly'])}/semana."
     )
 
 
@@ -610,14 +918,33 @@ def get_action(
 
 def analyze_asset(asset):
 
-    data = get_market_data(
-        asset["ticker"]
-    )
+    if asset.get("ticker"):
 
-    news = get_news(
-        asset["ticker"],
-        limit=3
-    )
+        data = get_market_data(
+            asset["ticker"]
+        )
+
+        news = get_news(
+            asset["ticker"],
+            limit=3
+        )
+
+    else:
+
+        data = {
+            "current": asset.get("fallback_price"),
+            "day_change": None,
+            "week_change": None,
+            "month_change": None,
+            "high_3m": None,
+            "low_3m": None,
+            "distance_high": None,
+            "distance_low": None,
+            "last_date": asset.get(
+                "fallback_price_date"
+            ),
+        }
+        news = []
 
     action, explanation = get_action(
         asset,
@@ -643,277 +970,166 @@ def analyze_asset(asset):
 # CONSTRUIR INFORME
 # ============================================================
 
-def build_report(results):
+def build_report(results, estimate, as_of=None):
 
-    now = datetime.now(
-        timezone.utc
-    )
-
-    lines = []
-
-    lines.append(
-        f"📊 <b>INFORME SEMANAL — CARTERA "
-        f"{TOTAL_MONTHLY:.0f} €</b>"
-    )
-
-    lines.append(
-        f"<i>{now.strftime('%d/%m/%Y %H:%M')} UTC</i>"
-    )
-
-    lines.append("")
-
-    lines.append(
-        "Plan mensual: "
-        f"<b>{TOTAL_MONTHLY:.0f} €</b> — "
-        f"{ETF_MONTHLY:.0f} € ETFs de núcleo + "
-        f"{SPECULATIVE_MONTHLY:.0f} € especulativo."
-    )
-
-    lines.append("")
-
-    # --------------------------------------------------------
-    # APORTACIONES
-    # --------------------------------------------------------
-
-    lines.append(
-        "🏦 <b>APORTACIONES MENSUALES</b>"
-    )
-
-    lines.append("")
+    now = datetime.now(timezone.utc)
+    as_of = as_of or now.date()
+    lines = [
+        "📊 <b>INFORME SEMANAL — MODELO 45 €/SEMANA</b>",
+        f"<i>{now.strftime('%d/%m/%Y %H:%M')} UTC</i>",
+        "",
+        "🏦 <b>APORTACIONES SEMANALES</b>",
+        "",
+    ]
 
     for asset in PORTFOLIO:
 
-        if asset["monthly"] == 0:
-
-            lines.append(
-                f"• <b>{html.escape(asset['display_ticker'])}</b> "
-                f"— posición mantenida; sin nuevas "
-                f"compras periódicas"
-            )
-
-        elif "purchases_per_month" in asset:
-
-            lines.append(
-                f"• <b>{html.escape(asset['display_ticker'])}</b> "
-                f"— {asset['purchases_per_month']} compras de "
-                f"{money(asset['amount_per_purchase'])} "
-                f"({money(asset['monthly'])}/mes)"
-            )
-
-            lines.append(
-                f"  {html.escape(asset['name'])} · "
-                f"ISIN {html.escape(asset['isin'])}"
-            )
-
-        else:
-
-            lines.append(
-                f"• <b>{html.escape(asset['display_ticker'])}</b> "
-                f"— {money(asset['monthly'])}/mes"
-            )
-
-    lines.append("")
-
-    lines.append(
-        "━━━━━━━━━━━━━━━━━━━━"
-    )
-
-    lines.append("")
-
-    # --------------------------------------------------------
-    # ESTADO
-    # --------------------------------------------------------
-
-    lines.append(
-        "📈 <b>ESTADO DE LA CARTERA</b>"
-    )
-
-    lines.append("")
-
-    for result in results:
-
-        asset = result["asset"]
-
-        data = result["data"]
-
-        lines.append(
-            f"<b>{html.escape(asset['display_ticker'])}</b> "
-            f"— {html.escape(asset['name'])}"
-        )
-
-        if data["current"] is not None:
-
-            lines.append(
-                f"💶 Precio: "
-                f"<b>{data['current']:.2f}</b>"
-            )
-
-        else:
-
-            lines.append(
-                "💶 Precio: N/D"
-            )
-
-        lines.append(
-            f"📅 Semana: "
-            f"<b>{pct(data['week_change'])}</b> "
-            f"| Mes: "
-            f"<b>{pct(data['month_change'])}</b>"
-        )
-
-        if (
-            data["low_3m"] is not None
-            and data["high_3m"] is not None
-        ):
-
-            lines.append(
-                f"📉 3 meses: "
-                f"{data['low_3m']:.2f} — "
-                f"{data['high_3m']:.2f}"
-            )
-
-        else:
-
-            lines.append(
-                "📉 3 meses: N/D"
-            )
-
-        lines.append(
-            f"➡️ <b>{result['action']}</b>"
-        )
-
-        lines.append(
-            f"   "
-            f"{html.escape(result['explanation'])}"
-        )
-
-        lines.append("")
-
-    lines.append(
-        "━━━━━━━━━━━━━━━━━━━━"
-    )
-
-    lines.append("")
-
-    # --------------------------------------------------------
-    # NOTICIAS
-    # --------------------------------------------------------
-
-    lines.append(
-        "📰 <b>NOTICIAS DESTACADAS</b>"
-    )
-
-    lines.append("")
-
-    news_count = 0
-
-    for result in results:
-
-        asset = result["asset"]
-
-        news = result["news"]
-
-        if not news:
+        if asset["weekly"] <= 0:
             continue
 
-        for item in news[:2]:
-
-            title = html.escape(
-                item["title"]
+        lines.append(
+            f"• <b>{html.escape(asset['display_ticker'])}</b> "
+            f"— {money(asset['weekly'])}/semana"
+            + (
+                f" · ISIN {html.escape(asset['isin'])}"
+                if asset.get("isin")
+                else ""
             )
+        )
 
-            publisher = html.escape(
-                item["publisher"]
+    lines.extend([
+        f"• <b>TOTAL — {money(TOTAL_WEEKLY)}/semana</b>",
+        "<i>Fidelity y Vanguard usan el último NAV conocido "
+        "del 04/11/2026; no se inventa ticker bursátil.</i>",
+        "",
+        "📦 <b>POSICIONES HISTÓRICAS SIN NUEVAS COMPRAS</b>",
+        "",
+    ])
+
+    for asset in PORTFOLIO:
+
+        if asset["weekly"] != 0:
+            continue
+
+        lines.append(
+            f"• <b>{html.escape(asset['display_ticker'])}</b> "
+            f"— mantener; aportación 0 €"
+        )
+
+    lines.extend([
+        "",
+        "⚖️ <b>VALOR Y PESOS ESTIMADOS</b>",
+        "",
+        f"Valor estimado conocido: <b>{money(estimate['total'])}</b>",
+    ])
+
+    for asset in PORTFOLIO:
+        position = estimate["positions"][asset["id"]]
+
+        if (
+            position["value"] == 0
+            and asset["id"] in estimate["missing_baseline"]
+        ):
+            lines.append(
+                f"• <b>{html.escape(asset['display_ticker'])}</b> "
+                f"— sin baseline inicial"
             )
+            continue
+
+        lines.append(
+            f"• <b>{html.escape(asset['display_ticker'])}</b> "
+            f"— {money(position['value'])} · "
+            f"peso estimado {weight_pct(position['weight'])}"
+        )
+
+    if estimate["incomplete"]:
+        lines.extend([
+            "",
+            "⚠️ Estimación incompleta: falta el valor inicial "
+            "de BTC o alguna cotización. No se inventa ese valor.",
+        ])
+
+    lines.extend([
+        "",
+        "🚦 <b>ALERTAS DE CONCENTRACIÓN</b>",
+        "",
+    ])
+
+    for asset in PORTFOLIO:
+
+        if asset["type"] != "SATELLITE":
+            continue
+
+        weight = estimate["positions"][asset["id"]]["weight"]
+        status = concentration_status(weight)
+        lines.append(
+            f"• <b>{html.escape(asset['display_ticker'])}</b>: "
+            f"{status} ({weight_pct(weight)})"
+        )
+
+    next_date = next_purchase_date(as_of)
+    lines.extend([
+        "",
+        "📅 <b>PRÓXIMA COMPRA PREVISTA</b>",
+        "",
+        f"Lunes {next_date.strftime('%d/%m/%Y')}.",
+        "Si no hay cotización válida, se usa el siguiente "
+        "día hábil disponible.",
+        "",
+        "📈 <b>SEGUIMIENTO DE MERCADO</b>",
+        "",
+    ])
+
+    for result in results:
+        asset = result["asset"]
+        data = result["data"]
+        lines.append(
+            f"• <b>{html.escape(asset['display_ticker'])}</b> "
+            f"— {result['action']} · semana "
+            f"{pct(data['week_change'])}"
+        )
+
+    news_count = 0
+    news_lines = []
+
+    for result in results:
+        asset = result["asset"]
+
+        for item in result["news"][:1]:
+            title = html.escape(item["title"])
+            publisher = html.escape(item["publisher"])
 
             if item["link"]:
-
                 safe_link = html.escape(
                     item["link"],
-                    quote=True
+                    quote=True,
                 )
-
-                lines.append(
-                    f"• <a href=\"{safe_link}\">"
-                    f"{title}"
-                    f"</a> "
-                    f"({publisher}) "
-                    f"— {asset['display_ticker']}"
+                news_lines.append(
+                    f"• <a href=\"{safe_link}\">{title}</a> "
+                    f"({publisher}) — {asset['display_ticker']}"
                 )
-
             else:
-
-                lines.append(
-                    f"• {title} "
-                    f"({publisher}) "
+                news_lines.append(
+                    f"• {title} ({publisher}) "
                     f"— {asset['display_ticker']}"
                 )
 
             news_count += 1
 
-    if news_count == 0:
+    if news_count:
+        lines.extend([
+            "",
+            "📰 <b>NOTICIAS DESTACADAS</b>",
+            "",
+            *news_lines,
+        ])
 
-        lines.append(
-            "No se han podido obtener "
-            "noticias esta semana."
-        )
-
-    lines.append("")
-
-    lines.append(
-        "━━━━━━━━━━━━━━━━━━━━"
-    )
-
-    lines.append("")
-
-    # --------------------------------------------------------
-    # QUÉ HACER
-    # --------------------------------------------------------
-
-    lines.append(
-        "🎯 <b>QUÉ HACER ESTA SEMANA</b>"
-    )
-
-    lines.append("")
-
-    for index, asset in enumerate(PORTFOLIO, start=1):
-
-        if asset["monthly"] == 0:
-
-            instruction = (
-                "mantener la posición; sin nuevas "
-                "compras periódicas."
-            )
-
-        elif "purchases_per_month" in asset:
-
-            instruction = (
-                f"realizar {asset['purchases_per_month']} compras "
-                f"de {asset['amount_per_purchase']:.0f} € al mes "
-                f"({asset['monthly']:.0f} €/mes)."
-            )
-
-        else:
-
-            instruction = (
-                f"mantener {asset['monthly']:.0f} €/mes."
-            )
-
-        lines.append(
-            f"{index}. "
-            f"<b>{html.escape(asset['display_ticker'])}:</b> "
-            f"{instruction}"
-        )
-
-    lines.append("")
-
-    lines.append(
-        "⚠️ <i>Una subida o caída semanal "
-        "por sí sola no es motivo para cambiar "
-        "la estrategia. En las especulativas, "
-        "hay que valorar también resultados, "
-        "noticias y evolución de la tesis.</i>"
-    )
+    lines.extend([
+        "",
+        "ℹ️ <i>Los valores y pesos son estimados y pueden "
+        "diferir de Trade Republic. Las alertas son de "
+        "vigilancia: el bot no ejecuta compras ni ventas.</i>",
+    ])
 
     return "\n".join(lines)
 
@@ -1049,9 +1265,43 @@ def main():
 
     validate_config()
 
+    as_of = datetime.now(
+        timezone.utc
+    ).date()
+    state = load_state()
+    price_histories = {}
+
+    for asset in PORTFOLIO:
+
+        try:
+            price_histories[asset["id"]] = (
+                get_price_history(asset, as_of)
+            )
+        except Exception as exc:
+            price_histories[asset["id"]] = {}
+            print(
+                f"Histórico no disponible para "
+                f"{asset['display_ticker']}: {exc}"
+            )
+
+    estimate = estimate_portfolio(
+        state,
+        price_histories,
+        as_of,
+    )
+
     print(
-        f"Cartera mensual: "
-        f"{TOTAL_MONTHLY:.0f} €"
+        "Compras teóricas nuevas procesadas: "
+        f"{len(estimate['purchases_added'])}"
+    )
+    print(
+        "Próxima compra programada: "
+        f"{next_purchase_date(as_of).strftime('%d/%m/%Y')}"
+    )
+
+    print(
+        f"Aportación semanal: "
+        f"{TOTAL_WEEKLY:.0f} €"
     )
 
     print("Activos:")
@@ -1061,7 +1311,7 @@ def main():
         print(
             f"  "
             f"{asset['display_ticker']}: "
-            f"{asset['monthly']:.0f} €/mes "
+            f"{asset['weekly']:.0f} €/semana "
             f"({asset['ticker']})"
         )
 
@@ -1137,7 +1387,9 @@ def main():
             )
 
     report = build_report(
-        results
+        results,
+        estimate,
+        as_of,
     )
 
     messages = split_message(
@@ -1155,6 +1407,8 @@ def main():
         send_telegram(
             message
         )
+
+    save_state(estimate["state"])
 
     print(
         "Informe enviado correctamente."
