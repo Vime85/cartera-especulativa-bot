@@ -5,11 +5,7 @@ on:
   # Permite ejecutar el bot manualmente desde GitHub
   workflow_dispatch:
 
-  # Ejecutar una vez por semana
-  # Domingo a las 17:00 UTC
-  # = 19:00 en España durante horario de verano
-  schedule:
-    - cron: "0 17 * * 0"
+  # Programación automática retirada: el informe semanal se ejecuta en Windows.
 
 
 jobs:
